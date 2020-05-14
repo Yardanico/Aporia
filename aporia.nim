@@ -11,7 +11,7 @@
 import glib2, gtk2, gtksourceview, dialogs, os, pango, osproc
 import strutils except toLower
 import gdk2 except `delete`, string # Don't import delete to avoid "ambiguous identifier" error under Windows
-import pegs, streams, times, parseopt, parseutils, asyncio, sockets, encodings, unicode
+import pegs, streams, times, parseopt, parseutils, asyncdispatch, net, encodings, unicode
 import tables, algorithm
 
 
@@ -600,11 +600,11 @@ proc sourceViewKeyPress(sourceView: PWidget, event: PEventKey,
       var current = win.sourceViewTabs.getCurrentPage()
       var tab     = win.tabs[current]
 
-      template nextTimes(t: untyped): typed {.immediate.} =
+      template nextTimes(t: untyped): typed =
         for i in 0..t:
           if selectedPath.getIndices[]+1 < childrenLen:
             next(selectedPath)
-      template prevTimes(t: untyped): typed {.immediate.} =
+      template prevTimes(t: untyped): typed =
         for i in 0..t:
           discard prev(selectedPath)
 
@@ -1419,7 +1419,7 @@ proc compileRun(filename: string, shouldRun: bool) =
   let workDir = filename.splitFile.dir
   if shouldRun:
     let ifSuccess = changeFileExt(filename, os.ExeExt)
-    runAfter = newExec(quoteIfContainsWhite(ifSuccess), workDir, ExecRun)
+    runAfter = newExec(quoteShell(ifSuccess), workDir, ExecRun)
   win.execProcAsync newExec(cmd, workDir, ExecNim, runAfter = runAfter)
 
 proc CompileCurrent_Activate(menuitem: PMenuItem, user_data: pointer) =
@@ -2000,7 +2000,7 @@ proc initTopMenu(mainBox: PBox) =
   var plainTextItem = checkMenuItemNew("Plain text"); plainTextItem.show()
   SyntaxHighlightingMenu.append(plainTextItem)
   win.tempStuff.plMenuItems[""] = (plainTextItem, "")
-  var plainText = ""
+  var plainText = "a"
   GCRef(plainText) # We need this for the whole lifetime of this app
   discard signalConnect(plainTextItem, "toggled",
                         SignalFunc(pl_Toggled),
@@ -2498,40 +2498,37 @@ proc initTempStuff() =
   win.tempStuff.autoComplete = newAutoComplete()
 
 {.pop.}
-proc initSocket() =
-  win.IODispatcher = newDispatcher()
-  win.oneInstSock = asyncSocket()
-  win.oneInstSock.handleAccept =
-    proc (s: AsyncSocket) =
-      var client: AsyncSocket
-      new(client)
-      s.accept(client)
-      # Let the connecting instance know that this instance is alive.
-      client.send("ALIVE\c\l")
-      #FIXME: threadAnalysis is set to off to work around this anonymous proc not being gc safe
-      client.handleRead =
-        proc (c: AsyncSocket) {.closure, gcsafe.} =
-          var line = ""
-          if c.readLine(line):
-            if line == "":
-              c.close()
-            elif line == "\c\L":
-              win.w.present()
-            else:
-              var filePath = line
-              if not filePath.isAbsolute():
-                filePath = getCurrentDir() / filePath
-              if existsFile(filepath):
-                discard addTab("", filepath, {tabSetCurrent, tabTryToReload})
-                win.w.present()
-              else:
-                win.w.error("File not found: " & filepath)
-                win.w.present()
-          else:
-            win.w.error("One instance socket error on recvLine operation: " & oSErrorMsg(osLastError()))
-      win.IODispatcher.register(client)
+import asyncnet
 
-  win.IODispatcher.register(win.oneInstSock)
+proc processClient(c: AsyncSocket) {.async.} = 
+  # Let the connecting instance know that this instance is alive.
+  await c.send("ALIVE\c\l")
+  while true:
+    var line = await c.recvLine()
+    if line == "":
+      break
+    elif line == "\c\L":
+      win.w.present()
+    else:
+      var filePath = line
+      if not filePath.isAbsolute():
+        filePath = getCurrentDir() / filePath
+      if existsFile(filepath):
+        discard addTab("", filepath, {tabSetCurrent, tabTryToReload})
+        win.w.present()
+      else:
+        win.w.error("File not found: " & filepath)
+        win.w.present()
+  c.close()
+
+proc serve() {.async.} =  
+  while true:
+    let client = await win.oneInstSock.accept()
+    asyncCheck processClient(client)
+
+proc initSocket() =
+  win.oneInstSock = newAsyncSocket()
+  asyncCheck serve()
   win.oneInstSock.bindAddr(Port(win.globalSettings.singleInstancePort.toU16), "localhost")
   win.oneInstSock.listen()
 {.push cdecl.}
@@ -2627,19 +2624,20 @@ proc initControls() =
           "function properly as a single instance. Error was: " & getCurrentExceptionMsg())
       discard gTimeoutAddFull(glib2.GPriorityDefault, 500,
         proc (dummy: pointer): bool =
-          result = win.IODispatcher.poll(5), nil, nil)
+          result = hasPendingOperations()
+          if result:
+            poll(5)
+        , nil, nil)
 
 {.pop.}
-proc checkAlreadyRunning(): bool =
+proc checkAlreadyRunning(): Future[bool] {.async.} =
   # How long to wait for a reply from other instance (in secs)
   const waitTime = 2
 
   result = false
-  let ioDispatcher = newDispatcher()
-  var client = asyncSocket()
-  ioDispatcher.register(client)
+  var client = newAsyncSocket()
   try:
-    client.connect("localhost", Port(win.globalSettings.singleInstancePort.toU16))
+    await client.connect("localhost", Port(win.globalSettings.singleInstancePort.toU16))
   except OSError:
     return false
 
@@ -2647,34 +2645,34 @@ proc checkAlreadyRunning(): bool =
   var waiting = true
   var waitingSince = epochTime()
 
-  proc onConnect(c: AsyncSocket) {.closure.} =
+  proc onConnect(c: AsyncSocket) {.async.} =
     echo("Checking for other instances of Aporia.")
     echo("Waiting for instance confirmation (for ", waitTime, " seconds)...")
 
-  proc onRead(c: AsyncSocket) {.closure, gcsafe.} =
-    var line = ""
-    if c.readLine(line):
-      if line == "":
-        echo("Aporia instance disconnected during confirmation.")
-        waiting = false
-        launch = true
-      elif line == "ALIVE":
-        waiting = false
-        launch = false
-        echo("An instance of Aporia is already running.")
-      else:
-        echo("Received strange message from other instance: ", line)
-        waiting = false
-        launch = false
+    var line = await c.recvLine()
+    if line == "":
+      echo("Aporia instance disconnected during confirmation.")
+      waiting = false
+      launch = true
+    elif line == "ALIVE":
+      waiting = false
+      launch = false
+      echo("An instance of Aporia is already running.")
+    else:
+      echo("Received strange message from other instance: ", line)
+      waiting = false
+      launch = false
 
     waiting = false
     launch = false
 
-  client.handleConnect = onConnect
-  client.handleRead = onRead
+  asyncCheck client.onConnect()
   while waiting:
     try:
-      if not ioDispatcher.poll(5): break
+      if hasPendingOperations():
+        poll(5)
+      else:
+        break
     except OSError:
       let connRefused = 61
       if (ref OSError)(getCurrentException()).errorCode != connRefused:
@@ -2695,12 +2693,12 @@ proc checkAlreadyRunning(): bool =
         var filepath = file
         if not filepath.isAbsolute():
           filepath = getCurrentDir() / filepath
-        client.send(filepath & "\c\L")
+        await client.send(filepath & "\c\L")
       client.close()
       result = true
     else:
       result = true
-      client.send("\c\L")
+      await client.send("\c\L")
       client.close()
 {.push cdecl.}
 
@@ -2712,7 +2710,7 @@ if versionReply != nil:
 
 when not defined(noSingleInstance):
   if win.globalSettings.singleInstance:
-    if checkAlreadyRunning():
+    if waitFor checkAlreadyRunning():
       quit(QuitSuccess)
 
 createProcessThreads(win)

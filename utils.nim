@@ -8,8 +8,8 @@
 #
 
 # Stdlib imports:
-import gtk2, gtksourceview, glib2, pango, osproc, streams, asyncio, strutils, times
-import tables, os, dialogs, pegs, osproc
+import gtk2, gtksourceview, glib2, pango, osproc, streams, asyncdispatch, strutils, times
+import tables, os, dialogs, pegs, osproc, asyncnet
 from gdk2 import TRectangle, intersect, TColor, colorParse, TModifierType
 # Local imports:
 from CustomStatusBar import CustomStatusBar, StatusID
@@ -134,7 +134,6 @@ type
     autoSettings*: AutoSettings
     globalSettings*: GlobalSettings
     oneInstSock*: AsyncSocket
-    IODispatcher*: Dispatcher
 
   SuggestDialog* = object
     dialog*: gtk2.PWindow
@@ -500,7 +499,7 @@ proc normalize*(le: LineEnding, text: string): string =
   ## Normalizes newlines and strips trailing whitespace.
   result = ""
   var i = 0
-  while true:
+  while i < text.len - 1:
     case text[i]
     of ' ', '\t':
       # peek and see if a newline follows:
@@ -516,7 +515,7 @@ proc normalize*(le: LineEnding, text: string): string =
         i.inc
       else:
         result.add(le.srepr("\c"))
-    of '\0': return
+    #of '\0': return
     else:
       result.add text[i]
 
@@ -598,11 +597,11 @@ proc setHighlightSyntax*(win: var MainWin, tab: int, doHighlight: bool) =
   win.tempStuff.commentSyntax = ("", "", "")
 
 # -- Compilation-specific
-
+import osproc
 proc getCmd*(win: var MainWin, cmd, filename: string): string =
   ## ``cmd`` specifies the format string. ``findExe(exe)`` is allowed as well
   ## as ``#$``. The ``#$`` is replaced by ``filename``.
-  var f = quoteIfContainsWhite(filename)
+  var f = quoteShell(filename)
   proc promptNimPath(win: var MainWin): string =
     ## If ``settings.nimPath`` is not set, prompts the user for the nim path.
     ## Otherwise returns ``settings.nimPath``.
@@ -612,9 +611,9 @@ proc getCmd*(win: var MainWin, cmd, filename: string): string =
     result = win.globalSettings.nimPath
 
   if cmd =~ peg"\s* '$' y'findExe' '(' {[^)]+} ')' {.*}":
-    var exe = quoteIfContainsWhite(findExe(matches[0]))
+    var exe = quoteShell(findExe(matches[0]))
     if matches[0].normalize == "nim" and exe.len == 0:
-      exe = quoteIfContainsWhite(promptNimPath(win))
+      exe = quoteShell(promptNimPath(win))
 
     if exe.len == 0: exe = matches[0]
     result = exe & " " & matches[1] % f

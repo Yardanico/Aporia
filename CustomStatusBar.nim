@@ -117,8 +117,7 @@ proc setTemp*(bar: CustomStatusBar, text: string, urgency: Urgency, timeout: int
   ## automatically and the previous one will be set.
   ##
   ## Returns the ID.
-  var st: Status
-  st.kind = StatusTemp
+  var st = Status(kind: StatusTemp)
   st.text = text
   st.urgency = urgency
   st.timeout = timeout
@@ -144,7 +143,7 @@ proc `==`*(s, s2: StatusID): bool {.borrow.}
 proc delPrevious*(bar: CustomStatusBar, id: StatusID) =
   ## If ``id`` is present in the list of previous statuses. It will be deleted.
   var ix = -1
-  for i in 0 .. <bar.statuses.len:
+  for i in 0 ..< bar.statuses.len:
     if bar.statuses[i].startTime == float(id):
       ix = i
       break

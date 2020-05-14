@@ -130,7 +130,7 @@ proc writeKeyVal(f: File, key, val: string) =
   f.write(key)
   f.write(" = ")
   if val.len == 0: f.write("\"\"")
-  else: f.write(quoteIfContainsWhite(val))
+  else: f.write(quoteShell(val))
   f.write("\n")
 
 proc writeKeyVal(f: File, key: string, val: int) =

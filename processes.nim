@@ -141,7 +141,7 @@ proc printProcOutput(win: var MainWin, line: string) =
   ## continuous errors should be received, errors which span multiple lines
   ## should be received as one continuous message.
   echod("Printing: ", line.repr)
-  template paErr(): typed =
+  template paErr() =
     var parseRes: AporiaError
     parseError(line, parseRes)
 
@@ -312,7 +312,7 @@ proc newExec*(command: string, workDir: string, mode: ExecMode, output = true,
   result.runAfter = runAfter
   result.runAfterSuccess = runAfterSuccess
 
-template createExecThrEvent(t: ExecThrEventType, todo: typed): typed {.immediate.} =
+template createExecThrEvent(t: ExecThrEventType, todo: untyped): untyped =
   ## Sends a thrEvent of type ``t``, does ``todo`` before sending.
   var event {.inject.}: ExecThrEvent
   event.typ = t
@@ -324,11 +324,11 @@ proc cmdToArgs(cmd: string): tuple[bin: string, args: seq[string]] =
   assert spl.len > 0
   result.bin = spl[0]
   result.args = @[]
-  for i in 1 .. <spl.len:
+  for i in 1 ..< spl.len:
     result.args.add(spl[i])
 
 proc dispatchTasks(tasks: int, started: var bool, p: var Process, o: var Stream) =
-  for i in 0..tasks-1:
+  for i in 0 .. tasks-1:
     var task: ExecThrTask = execThrTaskChan.recv()
     case task.typ
     of ThrRun:
@@ -337,7 +337,8 @@ proc dispatchTasks(tasks: int, started: var bool, p: var Process, o: var Stream)
         p = startProcess(bin, task.workDir, args,
                          options = {poStdErrToStdOut, poUsePath, poInteractive})
         createExecThrEvent(EvStarted):
-          event.p = p
+          echo event
+          #event.p = p
         o = p.outputStream
         started = true
       else:
