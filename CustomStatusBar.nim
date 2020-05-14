@@ -30,7 +30,7 @@ type
   StatusID* = distinct float
 
 proc defaultStatus(): Status =
-  result.kind = StatusPerm
+  result = Status(kind: StatusPerm)
   result.text = "Ready"
   result.urgency = UrgNormal
   result.startTime = epochTime()
@@ -129,8 +129,7 @@ proc setProgress*(bar: CustomStatusBar, text: string): StatusID {.discardable.} 
   ## Shows the ``bar.progressbar``.
   ##
   ## Returns the ID.
-  var st: Status
-  st.kind = StatusProgress
+  var st = Status(kind: StatusProgress)
   st.text = text
   st.urgency = UrgNormal
   st.startTime = epochTime()

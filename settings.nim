@@ -23,7 +23,7 @@ var win: ptr utils.MainWin
 proc escapeMarkup(s: string): string =
   result = ""
   var i = 0
-  while i < s.len - 1:
+  while i < s.len:
     case s[i]
     of '&': result.add("&amp;")
     of '<': result.add("&lt;")

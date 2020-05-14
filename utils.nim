@@ -477,12 +477,13 @@ proc `saved=`*(t: Tab, b: bool) =
 
 proc detectLineEndings*(text: string): LineEnding =
   var i = 0
-  while true:
+  while i < text.len:
     case text[i]
     of '\L':
       return leLF
     of '\c':
-      if text[i + 1] == '\L': return leCRLF
+      if i < text.len - 1:
+        if text[i + 1] == '\L': return leCRLF
       else: return leCR
     else:
       if text[i] == '\0': return leAuto
@@ -499,10 +500,11 @@ proc normalize*(le: LineEnding, text: string): string =
   ## Normalizes newlines and strips trailing whitespace.
   result = ""
   var i = 0
-  while i < text.len - 1:
+  while i < text.len:
     case text[i]
     of ' ', '\t':
       # peek and see if a newline follows:
+      if i == text.len - 1: return
       var j = i+1
       while text[j] in {' ', '\t'}: inc j
       if text[j] in {'\L', '\C'}: i = j-1
@@ -510,6 +512,7 @@ proc normalize*(le: LineEnding, text: string): string =
     of '\L':
       result.add(le.srepr("\L"))
     of '\C':
+      if i == text.len - 1: return
       if text[i + 1] == '\L':
         result.add(le.srepr("\c\L"))
         i.inc

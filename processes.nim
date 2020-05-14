@@ -279,8 +279,7 @@ proc execProcAsync*(win: var MainWin, exec: ExecOptions) =
   # Execute the process
   win.tempStuff.currentExec = exec
   echod(exec.command)
-  var task: ExecThrTask
-  task.typ = ThrRun
+  var task = ExecThrTask(typ: ThrRun)
   task.command = exec.command
   task.workDir = exec.workDir
   execThrTaskChan.send(task)
@@ -314,8 +313,7 @@ proc newExec*(command: string, workDir: string, mode: ExecMode, output = true,
 
 template createExecThrEvent(t: ExecThrEventType, todo: untyped): untyped =
   ## Sends a thrEvent of type ``t``, does ``todo`` before sending.
-  var event {.inject.}: ExecThrEvent
-  event.typ = t
+  var event {.inject.} = ExecThrEvent(typ: t)
   todo
   execThrEventChan.send(event)
 
