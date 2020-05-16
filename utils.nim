@@ -285,7 +285,7 @@ proc getTag*(buffer: PTextBuffer, name: string): PTextTag =
 
 proc addText*(textView: PTextView, text: string,
              colorTag: PTextTag = nil, scroll: bool = true) =
-  if text != nil:
+  if text.len > 0:
     var iter: TTextIter
     textView.getBuffer().getEndIter(addr(iter))
 

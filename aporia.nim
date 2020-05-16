@@ -902,7 +902,7 @@ proc addTab(name, filename: string, options = {tabSetCurrent},
 
   var buffer: PSourceBuffer = sourceBufferNew(win.nimLang)
 
-  if filename != nil and filename != "":
+  if filename != "":
     if tabSetCurrent in options:
       # If a tab with the same filename already exists select it.
       var existingTab = win.findTab(filename)
@@ -1071,7 +1071,7 @@ proc openFile(menuItem: PMenuItem, user_data: pointer) =
   if startpath.len == 0:
     # Use lastSavePath as the startpath
     startpath = win.tempStuff.lastSaveDir
-    if isNil(startpath) or startpath.len == 0:
+    if startpath.len == 0:
       startpath = os.getHomeDir()
 
   var files = chooseFilesToOpen(win.w, startpath)
